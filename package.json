@@ -1,0 +1,22 @@
+{
+  "name": "cp-reminder-bot",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "axios": "^1.8.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "luxon": "^3.5.0",
+    "node-schedule": "^2.1.1",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
