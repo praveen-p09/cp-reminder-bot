@@ -1,5 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
-import dotenv from "dotenv";
+import dotenv, { parse } from "dotenv";
 import schedule from "node-schedule";
 import axios from "axios";
 import express from "express";
@@ -10,11 +10,44 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { webHook: true });
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
+
+const setWebhook = async () => {
+  const webhookURL = `${process.env.SERVER_URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`;
+  try {
+    const response = await axios.post(
+      `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setWebhook`,
+      { url: webhookURL }
+    );
+    console.log("✅ Webhook set:", response.data);
+  } catch (error) {
+    console.error("❌ Error setting webhook:", error.response?.data || error);
+  }
+};
+
+if (process.env.SET_WEBHOOK === "true") {
+  setWebhook();
+}
+
+app.use(express.raw({ type: "application/json" }));
+
+app.post(`/bot${process.env.TELEGRAM_BOT_TOKEN}`, (req, res) => {
+  try {
+    bot.processUpdate(JSON.parse(req.body.toString()));
+    res.sendStatus(200);
+  } catch (error) {
+    console.error("Webhook error:", error);
+    res.sendStatus(400);
+  }
+});
+
+app.get("/", (_, res) => res.send("Bot is running!"));
+
+app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
 
 const allowedHosts = [
   "atcoder.jp",
@@ -25,6 +58,12 @@ const allowedHosts = [
   // "naukri.com/code360",
   // "luogu.com.cn",
 ];
+
+const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
+const getPlatformName = (host) => capitalize(host.split(".")[0]);
+const escapeMarkdownV2 = (text) => {
+  return text.replace(/([_*[\]()~`>#+-=|{}.!])/g, "\\$1");
+};
 
 // Fetch contest data from CList API
 const fetchContests = async () => {
@@ -75,20 +114,22 @@ const storeSentReminder = async (
   chatId,
   contestId,
   reminderType,
-  contestStart
+  contestStart,
+  host
 ) => {
   const { error } = await supabase.from("sent_reminders").insert({
     chat_id: chatId,
     contest_id: contestId,
     reminder_type: reminderType,
     contest_start: contestStart,
+    host: host,
   });
 
   if (error) {
     console.error("❌ Error storing reminder:", error);
   } else {
     console.log(
-      `✅ Reminder stored: chatId=${chatId}, contestId=${contestId}, type=${reminderType}, start=${contestStart}`
+      `✅ Reminder stored: chatId=${chatId}, contestId=${contestId}, type=${reminderType}, start=${contestStart}, host=${host}`
     );
   }
 };
@@ -98,7 +139,8 @@ const wasReminderSent = async (
   chatId,
   contestId,
   reminderType,
-  contestStart
+  contestStart,
+  host
 ) => {
   const { data, error } = await supabase
     .from("sent_reminders")
@@ -106,7 +148,8 @@ const wasReminderSent = async (
     .eq("chat_id", chatId)
     .eq("contest_id", contestId)
     .eq("reminder_type", reminderType)
-    .eq("contest_start", contestStart);
+    .eq("contest_start", contestStart)
+    .eq("host", host);
 
   if (error) {
     console.error("❌ Error checking sent reminder:", error);
@@ -134,24 +177,25 @@ const deleteExpiredContests = async () => {
 
 // Command: Start
 bot.onText(/\/start/, (msg) => {
-  const username = msg.from.username
-    ? `@${msg.from.username}`
-    : msg.from.first_name || "User";
+  const usernameEscaped = escapeMarkdownV2(username);
 
   bot.sendMessage(
     msg.chat.id,
-    `👋 Hello, ${username}!\n\n` +
-      `I'm **CP Reminder Bot**, your personal assistant for staying updated with upcoming coding contests! 🚀\n\n` +
-      `🔹 **What I Do?**\n` +
-      `- Send timely reminders for competitive programming contests.\n` +
-      `- Support platforms like Codeforces, AtCoder, LeetCode, CodeChef, and more.\n` +
-      `- Allow timezone customization to match your local time.\n\n` +
-      `🔹 **How to Use?**\n` +
-      `- ✅ Use **/subscribe** to start receiving contest reminders.\n` +
-      `- 🌍 Use **/settimezone TZ_Identifier** to configure your timezone.\n` +
-      `- ❌ Use **/unsubscribe** to stop receiving reminders.\n\n` +
-      `🛠️ Created by [Praveen Chandra Patro](https://www.linkedin.com/in/praveen-chandra-patro-1a6a5a257)\n\n` +
-      `Happy Coding! 🚀`
+    `👋 Hello, ${usernameEscaped}!\n\n` +
+      `I'm *CP Reminder Bot*, your personal assistant for staying updated with upcoming coding contests! 🚀\n\n` +
+      `  *What I Do\\?*\n` +
+      `1️⃣ Send timely reminders for competitive programming contests\\.\n` +
+      `2️⃣ Support platforms like Codeforces, AtCoder, LeetCode, CodeChef, and more\\.\n` +
+      `3️⃣ Allow timezone customization to match your local time\\.\n\n` +
+      `  *How to Use\\?*\n` +
+      `  ✅ Use \`/subscribe\` to start receiving contest reminders\\.\n` +
+      `  🌍 Use \`/settimezone TZ\\_Identifier\` to configure your timezone\\.\n` +
+      `  ❌ Use \`/unsubscribe\` to stop receiving reminders\\.\n\n` +
+      `🛠️ Created by [Praveen Patro](https://www.linkedin.com/in/praveen-chandra-patro-1a6a5a257)\n\n` +
+      `Happy Coding! 🚀`,
+    {
+      parse_mode: "MarkdownV2",
+    }
   );
 });
 
@@ -176,7 +220,11 @@ bot.onText(/\/settimezone (.+)/, async (msg, match) => {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
     await setUserTimezone(msg.chat.id, timezone);
-    bot.sendMessage(msg.chat.id, `🌍 Timezone set to ${timezone}`);
+    bot.sendMessage(
+      msg.chat.id,
+      `🌍 Timezone set to *${escapeMarkdownV2(timezone)}*`,
+      { parse_mode: "MarkdownV2" }
+    );
   } catch {
     bot.sendMessage(
       msg.chat.id,
@@ -219,65 +267,85 @@ schedule.scheduleJob("*/10 * * * *", async () => {
       if (
         hoursLeft <= 24 &&
         hoursLeft > 1 &&
-        !(await wasReminderSent(chat_id, contestId, "24hr", contest.start))
+        !(await wasReminderSent(
+          chat_id,
+          contestId,
+          "24hr",
+          contest.start,
+          getPlatformName(contest.host)
+        ))
       ) {
-        await storeSentReminder(chat_id, contestId, "24hr", contest.start);
-        sendTelegramMessage(
+        await storeSentReminder(
+          chat_id,
+          contestId,
+          "24hr",
+          contest.start,
+          getPlatformName(contest.host)
+        );
+        bot.sendMessage(
           chat_id,
           `⏳ **Reminder:** Contest within 24 hours!\n${formatContestMessage(
             contest,
             timezone
-          )}`
+          )}`,
+          (parse_mode = "MarkdownV2")
         );
       }
 
       if (
         hoursLeft <= 1 &&
-        !(await wasReminderSent(chat_id, contestId, "1hr", contest.start))
+        !(await wasReminderSent(
+          chat_id,
+          contestId,
+          "1hr",
+          contest.start,
+          getPlatformName(contest.host)
+        ))
       ) {
-        await storeSentReminder(chat_id, contestId, "1hr", contest.start);
-        sendTelegramMessage(
+        await storeSentReminder(
+          chat_id,
+          contestId,
+          "1hr",
+          contest.start,
+          getPlatformName(contest.host)
+        );
+        bot.sendMessage(
           chat_id,
           `🔥 **Reminder:** Contest starts within an hour!\n${formatContestMessage(
             contest,
             timezone
-          )}`
+          )}`,
+          (parse_mode = "MarkdownV2")
         );
       }
     }
   }
 
   await deleteExpiredContests();
-  console.log("✅ Expired contests deleted.");
 });
 
 // format contest message with timezone conversion
 const formatContestMessage = (contest, timezone) => {
-  const startTime = DateTime.fromISO(contest.start, { zone: "utc" })
-    .setZone(timezone)
-    .toFormat("yyyy-MM-dd HH:mm:ss ZZZZ");
+  const startTime = escapeMarkdownV2(
+    DateTime.fromISO(contest.start, { zone: "utc" })
+      .setZone(timezone)
+      .toFormat("yyyy-MM-dd HH:mm:ss ZZZZ")
+  );
 
-  const endTime = DateTime.fromISO(contest.end, { zone: "utc" })
-    .setZone(timezone)
-    .toFormat("yyyy-MM-dd HH:mm:ss ZZZZ");
+  const endTime = escapeMarkdownV2(
+    DateTime.fromISO(contest.end, { zone: "utc" })
+      .setZone(timezone)
+      .toFormat("yyyy-MM-dd HH:mm:ss ZZZZ")
+  );
 
-  return `📢 **${contest.event}**\n🌐 **Platform:** ${
-    contest.host
-  }\n⏳ **Duration:** ${Math.round(
-    contest.duration / 3600
-  )} hours\n🕒 **Start:** ${startTime}\n🛑 **End:** ${endTime}\n🔗 **Join Here:** [${
-    contest.host
-  }](${contest.href})`;
+  return (
+    `📢 *${escapeMarkdownV2(contest.event)}*\n` +
+    `🌐 *Platform:* ${escapeMarkdownV2(getPlatformName(contest.host))}\n` +
+    `⏳ *Duration:* ${escapeMarkdownV2(
+      Math.round((contest.duration / 3600) * 10) / 10 + " hours"
+    )}\n` +
+    `🕒 *Start:* ${startTime}\n` +
+    `🕒 *End:* ${endTime}\n` +
+    `🔗 *Join Here:* [Click Here](${escapeMarkdownV2(contest.href)})`
+  );
 };
-
-// send messages to Telegram
-const sendTelegramMessage = (chatId, message) => {
-  bot.sendMessage(chatId, message, {
-    parse_mode: "Markdown",
-    disable_web_page_preview: true,
-  });
-};
-
-// API Endpoints
-app.get("/", (_, res) => res.send("Bot is running!"));
-app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
