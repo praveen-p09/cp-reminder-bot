@@ -61,9 +61,8 @@ const allowedHosts = [
 
 const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 const getPlatformName = (host) => capitalize(host.split(".")[0]);
-const escapeMarkdownV2 = (text) => {
-  return text.replace(/([_*[\]()~`>#+-=|{}.!])/g, "\\$1");
-};
+const escapeMarkdownV2 = (text) =>
+  text.replace(/([_*[\]()~`>#+-=|{}.!])/g, "\\$1");
 
 // Fetch contest data from CList API
 const fetchContests = async () => {
@@ -236,13 +235,12 @@ bot.onText(/\/settimezone (.+)/, async (msg, match) => {
 
 // Enable command suggestions
 bot.setMyCommands([
-  { command: "start", description: "Start the bot and see usage instructions" },
+  { command: "start", description: "Start the bot" },
   { command: "subscribe", description: "Subscribe to contest reminders" },
   { command: "unsubscribe", description: "Unsubscribe from contest reminders" },
   {
     command: "settimezone",
-    description:
-      "Set your timezone for accurate reminders by writing TZ identifier(eg: Asia/Kolkata)",
+    description: "Set your timezone using TZ identifier(eg: Asia/Kolkata)",
   },
 ]);
 
@@ -289,7 +287,7 @@ schedule.scheduleJob("*/10 * * * *", async () => {
             contest,
             timezone
           )}`,
-          (parse_mode = "MarkdownV2")
+          { parse_mode: "MarkdownV2" }
         );
       }
 
@@ -316,7 +314,7 @@ schedule.scheduleJob("*/10 * * * *", async () => {
             contest,
             timezone
           )}`,
-          (parse_mode = "MarkdownV2")
+          { parse_mode: "MarkdownV2" }
         );
       }
     }
