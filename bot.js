@@ -177,6 +177,7 @@ const deleteExpiredContests = async () => {
 
 // Command: Start
 bot.onText(/\/start/, (msg) => {
+  const username = msg.from.username || msg.from.first_name || "User";
   const usernameEscaped = escapeMarkdownV2(username);
 
   bot.sendMessage(
