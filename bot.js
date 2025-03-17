@@ -20,7 +20,7 @@ const supabase = createClient(
 const fetchContests = async () => {
   try {
     const response = await axios.get(
-      `https://clist.by/api/v4/json/contest/?username=darkknight09&api_key=${process.env.API_KEY}&upcoming=true&start_time__during=864000&duration__lt=86400&order_by=start`
+      `https://clist.by/api/v4/json/contest/?username=${process.env.CLIST_USERNAME}&api_key=${process.env.CLIST_API_KEY}&upcoming=true&duration__lt=86400&order_by=start`
     );
     return response.data.objects;
   } catch (error) {
@@ -62,21 +62,35 @@ const removeSubscription = async (chatId) => {
 
 // Store sent reminders to prevent duplicate alerts for same contest
 const storeSentReminder = async (chatId, contestId, reminderType) => {
-  await supabase.from("sent_reminders").insert({
+  const { error } = await supabase.from("sent_reminders").insert({
     chat_id: chatId,
     contest_id: contestId,
     reminder_type: reminderType,
   });
+
+  if (error) {
+    console.error("❌ Error storing reminder:", error);
+  } else {
+    console.log(
+      `✅ Reminder stored: chatId=${chatId}, contestId=${contestId}, type=${reminderType}`
+    );
+  }
 };
 
 // Check if contest reminder was already sent
 const wasReminderSent = async (chatId, contestId, reminderType) => {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("sent_reminders")
     .select("id")
     .eq("chat_id", chatId)
     .eq("contest_id", contestId)
     .eq("reminder_type", reminderType);
+
+  if (error) {
+    console.error("❌ Error checking sent reminder:", error);
+    return false;
+  }
+
   return data.length > 0;
 };
 
@@ -134,6 +148,16 @@ bot.onText(/\/settimezone (.+)/, async (msg, match) => {
   }
 });
 
+const allowedHosts = [
+  "atcoder.jp",
+  "codeforces.com",
+  "codechef.com",
+  "leetcode.com",
+  "geeksforgeeks.org",
+  "naukri.com/code360",
+  "luogu.com.cn",
+];
+
 // Schedule Job every 10 minutes : send reminders and delete expired contests
 schedule.scheduleJob("*/10 * * * *", async () => {
   console.log(
@@ -145,6 +169,8 @@ schedule.scheduleJob("*/10 * * * *", async () => {
 
   for (const { chat_id, timezone } of subscribers) {
     for (const contest of contests) {
+      if (!allowedHosts.includes(contest.host)) continue;
+
       const contestId = contest.id;
       const startTime = DateTime.fromISO(contest.start, {
         zone: "utc",
@@ -164,6 +190,7 @@ schedule.scheduleJob("*/10 * * * *", async () => {
           )}`
         );
       }
+
       if (
         hoursLeft <= 1 &&
         !(await wasReminderSent(chat_id, contestId, "1hr"))
@@ -180,7 +207,6 @@ schedule.scheduleJob("*/10 * * * *", async () => {
     }
   }
 
-  // Delete contests that have already started
   await deleteExpiredContests();
   console.log("✅ Expired contests deleted.");
 });
@@ -190,12 +216,26 @@ const formatContestMessage = (contest, timezone) => {
   const startTime = DateTime.fromISO(contest.start, { zone: "utc" })
     .setZone(timezone)
     .toFormat("yyyy-MM-dd HH:mm:ss ZZZZ");
-  return `📢 **${contest.event}**\n🌐 **Platform:** ${contest.host}\n🕒 **Start Time:** ${startTime}\n🔗 **Link:** ${contest.href}`;
+
+  const endTime = DateTime.fromISO(contest.end, { zone: "utc" })
+    .setZone(timezone)
+    .toFormat("yyyy-MM-dd HH:mm:ss ZZZZ");
+
+  return `📢 **${contest.event}**\n🌐 **Platform:** ${
+    contest.host
+  }\n⏳ **Duration:** ${Math.round(
+    contest.duration / 3600
+  )} hours\n🕒 **Start:** ${startTime}\n🛑 **End:** ${endTime}\n🔗 **Join Here:** [${
+    contest.host
+  }](${contest.href})`;
 };
 
 // send messages to Telegram
 const sendTelegramMessage = (chatId, message) => {
-  bot.sendMessage(chatId, message, { parse_mode: "Markdown" });
+  bot.sendMessage(chatId, message, {
+    parse_mode: "Markdown",
+    disable_web_page_preview: true,
+  });
 };
 
 // API Endpoints
