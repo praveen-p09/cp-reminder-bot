@@ -181,8 +181,8 @@ bot.onText(/\/start/, (msg) => {
 
   bot.sendMessage(
     msg.chat.id,
-    `👋 Hello, ${usernameEscaped}!\n\n` +
-      `I'm *CP Reminder Bot*, your personal assistant for staying updated with upcoming coding contests! 🚀\n\n` +
+    `👋 Hello, ${usernameEscaped}\\!\n\n` +
+      `I'm *CP Reminder Bot*, your personal assistant for staying updated with upcoming coding contests\\! 🚀\n\n` +
       `  *What I Do\\?*\n` +
       `1️⃣ Send timely reminders for competitive programming contests\\.\n` +
       `2️⃣ Support platforms like Codeforces, AtCoder, LeetCode, CodeChef, and more\\.\n` +
@@ -192,7 +192,7 @@ bot.onText(/\/start/, (msg) => {
       `  🌍 Use \`/settimezone TZ\\_Identifier\` to configure your timezone\\.\n` +
       `  ❌ Use \`/unsubscribe\` to stop receiving reminders\\.\n\n` +
       `🛠️ Created by [Praveen Patro](https://www.linkedin.com/in/praveen-chandra-patro-1a6a5a257)\n\n` +
-      `Happy Coding! 🚀`,
+      `Happy Coding\\! 🚀`,
     {
       parse_mode: "MarkdownV2",
     }
@@ -283,7 +283,7 @@ schedule.scheduleJob("*/10 * * * *", async () => {
         );
         bot.sendMessage(
           chat_id,
-          `⏳ **Reminder:** Contest within 24 hours!\n${formatContestMessage(
+          `⏳ *Reminder:* Contest within 24 hours\\!\n${formatContestMessage(
             contest,
             timezone
           )}`,
@@ -310,7 +310,7 @@ schedule.scheduleJob("*/10 * * * *", async () => {
         );
         bot.sendMessage(
           chat_id,
-          `🔥 **Reminder:** Contest starts within an hour!\n${formatContestMessage(
+          `🔥 *Reminder:* Contest starts within an hour\\!\n${formatContestMessage(
             contest,
             timezone
           )}`,
