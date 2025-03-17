@@ -21,7 +21,7 @@ const setWebhook = async () => {
   try {
     const response = await axios.post(
       `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/setWebhook`,
-      { url: webhookURL }
+      { url: webhookURL, max_connections: 100 }
     );
     console.log("✅ Webhook set:", response.data);
   } catch (error) {
@@ -37,8 +37,8 @@ app.use(express.raw({ type: "application/json" }));
 
 app.post(`/bot${process.env.TELEGRAM_BOT_TOKEN}`, (req, res) => {
   try {
-    bot.processUpdate(JSON.parse(req.body.toString()));
     res.sendStatus(200);
+    bot.processUpdate(JSON.parse(req.body.toString()));
   } catch (error) {
     console.error("Webhook error:", error);
     res.sendStatus(400);
