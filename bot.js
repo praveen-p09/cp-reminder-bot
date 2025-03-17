@@ -16,6 +16,16 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+const allowedHosts = [
+  "atcoder.jp",
+  "codeforces.com",
+  "codechef.com",
+  "leetcode.com",
+  "geeksforgeeks.org",
+  // "naukri.com/code360",
+  // "luogu.com.cn",
+];
+
 // Fetch contest data from CList API
 const fetchContests = async () => {
   try {
@@ -61,30 +71,42 @@ const removeSubscription = async (chatId) => {
 };
 
 // Store sent reminders to prevent duplicate alerts for same contest
-const storeSentReminder = async (chatId, contestId, reminderType) => {
+const storeSentReminder = async (
+  chatId,
+  contestId,
+  reminderType,
+  contestStart
+) => {
   const { error } = await supabase.from("sent_reminders").insert({
     chat_id: chatId,
     contest_id: contestId,
     reminder_type: reminderType,
+    contest_start: contestStart,
   });
 
   if (error) {
     console.error("❌ Error storing reminder:", error);
   } else {
     console.log(
-      `✅ Reminder stored: chatId=${chatId}, contestId=${contestId}, type=${reminderType}`
+      `✅ Reminder stored: chatId=${chatId}, contestId=${contestId}, type=${reminderType}, start=${contestStart}`
     );
   }
 };
 
 // Check if contest reminder was already sent
-const wasReminderSent = async (chatId, contestId, reminderType) => {
+const wasReminderSent = async (
+  chatId,
+  contestId,
+  reminderType,
+  contestStart
+) => {
   const { data, error } = await supabase
     .from("sent_reminders")
     .select("id")
     .eq("chat_id", chatId)
     .eq("contest_id", contestId)
-    .eq("reminder_type", reminderType);
+    .eq("reminder_type", reminderType)
+    .eq("contest_start", contestStart);
 
   if (error) {
     console.error("❌ Error checking sent reminder:", error);
@@ -101,7 +123,7 @@ const deleteExpiredContests = async () => {
   const { error } = await supabase
     .from("sent_reminders")
     .delete()
-    .lt("contest_start", now); // Delete where contest_start < now
+    .lt("contest_start", now);
 
   if (error) {
     console.error("Error deleting expired contests:", error);
@@ -112,9 +134,24 @@ const deleteExpiredContests = async () => {
 
 // Command: Start
 bot.onText(/\/start/, (msg) => {
+  const username = msg.from.username
+    ? `@${msg.from.username}`
+    : msg.from.first_name || "User";
+
   bot.sendMessage(
     msg.chat.id,
-    "👋 Welcome!\nUse /subscribe to get contest reminders.\nUse '/settimezone TZ_Identifier' to fix your timezone.\nUse /unsubscribe to stop receiving contest reminders."
+    `👋 Hello, ${username}!\n\n` +
+      `I'm **CP Reminder Bot**, your personal assistant for staying updated with upcoming coding contests! 🚀\n\n` +
+      `🔹 **What I Do?**\n` +
+      `- Send timely reminders for competitive programming contests.\n` +
+      `- Support platforms like Codeforces, AtCoder, LeetCode, CodeChef, and more.\n` +
+      `- Allow timezone customization to match your local time.\n\n` +
+      `🔹 **How to Use?**\n` +
+      `- ✅ Use **/subscribe** to start receiving contest reminders.\n` +
+      `- 🌍 Use **/settimezone TZ_Identifier** to configure your timezone.\n` +
+      `- ❌ Use **/unsubscribe** to stop receiving reminders.\n\n` +
+      `🛠️ Created by [Praveen Chandra Patro](https://www.linkedin.com/in/praveen-chandra-patro-1a6a5a257)\n\n` +
+      `Happy Coding! 🚀`
   );
 });
 
@@ -148,15 +185,17 @@ bot.onText(/\/settimezone (.+)/, async (msg, match) => {
   }
 });
 
-const allowedHosts = [
-  "atcoder.jp",
-  "codeforces.com",
-  "codechef.com",
-  "leetcode.com",
-  "geeksforgeeks.org",
-  "naukri.com/code360",
-  "luogu.com.cn",
-];
+// Enable command suggestions
+bot.setMyCommands([
+  { command: "start", description: "Start the bot and see usage instructions" },
+  { command: "subscribe", description: "Subscribe to contest reminders" },
+  { command: "unsubscribe", description: "Unsubscribe from contest reminders" },
+  {
+    command: "settimezone",
+    description:
+      "Set your timezone for accurate reminders by writing TZ identifier(eg: Asia/Kolkata)",
+  },
+]);
 
 // Schedule Job every 10 minutes : send reminders and delete expired contests
 schedule.scheduleJob("*/10 * * * *", async () => {
@@ -179,12 +218,13 @@ schedule.scheduleJob("*/10 * * * *", async () => {
 
       if (
         hoursLeft <= 24 &&
-        !(await wasReminderSent(chat_id, contestId, "24hr"))
+        hoursLeft > 1 &&
+        !(await wasReminderSent(chat_id, contestId, "24hr", contest.start))
       ) {
-        await storeSentReminder(chat_id, contestId, "24hr");
+        await storeSentReminder(chat_id, contestId, "24hr", contest.start);
         sendTelegramMessage(
           chat_id,
-          `⏳ **Reminder:** Contest in 24 hours!\n${formatContestMessage(
+          `⏳ **Reminder:** Contest within 24 hours!\n${formatContestMessage(
             contest,
             timezone
           )}`
@@ -193,12 +233,12 @@ schedule.scheduleJob("*/10 * * * *", async () => {
 
       if (
         hoursLeft <= 1 &&
-        !(await wasReminderSent(chat_id, contestId, "1hr"))
+        !(await wasReminderSent(chat_id, contestId, "1hr", contest.start))
       ) {
-        await storeSentReminder(chat_id, contestId, "1hr");
+        await storeSentReminder(chat_id, contestId, "1hr", contest.start);
         sendTelegramMessage(
           chat_id,
-          `🔥 **Reminder:** Contest starts in 1 hour!\n${formatContestMessage(
+          `🔥 **Reminder:** Contest starts within an hour!\n${formatContestMessage(
             contest,
             timezone
           )}`
