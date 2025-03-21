@@ -266,7 +266,7 @@ schedule.scheduleJob("*/10 * * * *", async () => {
         zone: "utc",
       }).setZone(timezone);
       const nowInUserTimezone = DateTime.now().setZone(timezone);
-      if (contestStartTime <= nowInUserTimezone) continue;
+      if (startTime <= nowInUserTimezone) continue;
 
       const hoursLeft = startTime.diffNow("hours").hours;
 
