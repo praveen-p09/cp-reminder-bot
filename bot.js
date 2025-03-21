@@ -55,6 +55,10 @@ const allowedHosts = [
   "codechef.com",
   "leetcode.com",
   "geeksforgeeks.org",
+  // "facebook.com/hackercup",
+  // "hackerearth.com",
+  // "hackerrank.com",
+  // "topcoder.com",
   // "naukri.com/code360",
   // "luogu.com.cn",
 ];
@@ -261,6 +265,9 @@ schedule.scheduleJob("*/10 * * * *", async () => {
       const startTime = DateTime.fromISO(contest.start, {
         zone: "utc",
       }).setZone(timezone);
+      const nowInUserTimezone = DateTime.now().setZone(timezone);
+      if (contestStartTime <= nowInUserTimezone) continue;
+
       const hoursLeft = startTime.diffNow("hours").hours;
 
       if (
@@ -337,12 +344,12 @@ const formatContestMessage = (contest, timezone) => {
       .toFormat("yyyy-MM-dd HH:mm:ss ZZZZ")
   );
 
+  const hours = Math.floor(contest.duration / 3600);
+  const minutes = Math.round((contest.duration % 3600) / 60);
   return (
     `📢 *${escapeMarkdownV2(contest.event)}*\n` +
     `🌐 *Platform:* ${escapeMarkdownV2(getPlatformName(contest.host))}\n` +
-    `⏳ *Duration:* ${escapeMarkdownV2(
-      Math.round((contest.duration / 3600) * 10) / 10 + " hours"
-    )}\n` +
+    `⏳ *Duration:* ${escapeMarkdownV2(`${hours} hr ${minutes} min`)}\n` +
     `🕒 *Start:* ${startTime}\n` +
     `🕒 *End:* ${endTime}\n` +
     `🔗 *Join Here:* [Click Here](${escapeMarkdownV2(contest.href)})`
