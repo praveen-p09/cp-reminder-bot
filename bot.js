@@ -170,37 +170,17 @@ const storeSentReminders = async (reminders) => {
 
 // Delete expired contests from database
 const deleteExpiredContests = async () => {
-  const now = DateTime.utc().toISO({ suppressMilliseconds: true });
-  const oneHourLater = DateTime.utc()
-    .plus({ hours: 1 })
-    .toISO({ suppressMilliseconds: true });
+  const now = new Date().toISOString();
 
-  // Delete '24hr' reminders where contest_start is within the next 1 hour
-  const { error: error24hr } = await supabase
+  const { error } = await supabase
     .from("sent_reminders")
     .delete()
-    .lt("contest_start", oneHourLater)
-    .eq("reminder_type", "24hr");
+    .lt("contest_start", now);
 
-  if (error24hr) {
-    console.error("Error deleting 24hr reminders:", error24hr);
+  if (error) {
+    console.error("Error deleting expired contests:", error);
   } else {
-    console.log(
-      "✅ 24hr reminders removed where contest_start is within 1 hour."
-    );
-  }
-
-  // Delete '1hr' reminders where contest_start has already passed
-  const { error: error1hr } = await supabase
-    .from("sent_reminders")
-    .delete()
-    .lt("contest_start", now)
-    .eq("reminder_type", "1hr");
-
-  if (error1hr) {
-    console.error("Error deleting 1hr reminders:", error1hr);
-  } else {
-    console.log("✅ 1hr reminders removed where contest has already started.");
+    console.log("✅ Expired contests removed.");
   }
 };
 
