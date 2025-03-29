@@ -25,7 +25,7 @@ const setWebhook = async () => {
     );
     console.log("✅ Webhook set:", response.data);
   } catch (error) {
-    console.error("❌ Error setting webhook:", error.response?.data || error);
+    console.error("❌ Error setting webhook:", error?.response?.data ?? error);
   }
 };
 
@@ -37,8 +37,8 @@ app.use(express.raw({ type: "application/json" }));
 
 app.post(`/bot${process.env.TELEGRAM_BOT_TOKEN}`, (req, res) => {
   try {
-    res.sendStatus(200);
     bot.processUpdate(JSON.parse(req.body.toString()));
+    res.sendStatus(200);
   } catch (error) {
     console.error("Webhook error:", error);
     res.sendStatus(400);
@@ -49,7 +49,7 @@ app.get("/", (_, res) => res.send("Bot is running!"));
 
 app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
 
-const allowedHosts = [
+const allowedHosts = new Set([
   "atcoder.jp",
   "codeforces.com",
   "codechef.com",
@@ -61,7 +61,7 @@ const allowedHosts = [
   // "topcoder.com",
   // "naukri.com/code360",
   // "luogu.com.cn",
-];
+]);
 
 const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 const getPlatformName = (host) => capitalize(host.split(".")[0]);
@@ -74,7 +74,25 @@ const fetchContests = async () => {
     const response = await axios.get(
       `https://clist.by/api/v4/json/contest/?username=${process.env.CLIST_USERNAME}&api_key=${process.env.CLIST_API_KEY}&upcoming=true&duration__lt=86400&order_by=start`
     );
-    return response.data.objects;
+    const contests = response.data.objects.filter((contest) =>
+      allowedHosts.has(contest.host)
+    );
+    const nowInUTCTimezone = DateTime.now().setZone("Etc/UTC");
+    const filteredContests = contests.filter((contest) => {
+      const contestStart = DateTime.fromISO(contest.start, { zone: "utc" });
+      return contestStart > nowInUTCTimezone;
+    });
+    return filteredContests.map((contest) => {
+      return {
+        id: contest.id,
+        event: contest.event,
+        host: contest.host,
+        start: contest.start,
+        end: contest.end,
+        duration: contest.duration,
+        href: contest.href,
+      };
+    });
   } catch (error) {
     console.error("Error fetching contests:", error);
     return [];
@@ -97,7 +115,7 @@ const getUserSubscriptions = async () => {
 const setUserTimezone = async (chatId, timezone) => {
   await supabase
     .from("subscriptions")
-    .upsert({ chat_id: chatId, timezone }, { onConflict: ["chat_id"] });
+    .upsert({ chat_id: chatId, timezone }, { onConflict: "chat_id" });
 };
 
 // Store subscription in database
@@ -113,68 +131,75 @@ const removeSubscription = async (chatId) => {
 };
 
 // Store sent reminders to prevent duplicate alerts for same contest
-const storeSentReminder = async (
-  chatId,
-  contestId,
-  reminderType,
-  contestStart,
-  host
-) => {
-  const { error } = await supabase.from("sent_reminders").insert({
-    chat_id: chatId,
-    contest_id: contestId,
-    reminder_type: reminderType,
-    contest_start: contestStart,
-    host: host,
-  });
+const storeSentReminders = async (reminders) => {
+  if (reminders.length === 0) return;
+  const { error } = await supabase.from("sent_reminders").insert(reminders);
 
   if (error) {
     console.error("❌ Error storing reminder:", error);
   } else {
-    console.log(
-      `✅ Reminder stored: chatId=${chatId}, contestId=${contestId}, type=${reminderType}, start=${contestStart}, host=${host}`
-    );
+    console.log(`✅ Stored ${reminders.length} reminders successfully!`);
   }
 };
 
 // Check if contest reminder was already sent
-const wasReminderSent = async (
-  chatId,
-  contestId,
-  reminderType,
-  contestStart,
-  host
-) => {
-  const { data, error } = await supabase
-    .from("sent_reminders")
-    .select("id")
-    .eq("chat_id", chatId)
-    .eq("contest_id", contestId)
-    .eq("reminder_type", reminderType)
-    .eq("contest_start", contestStart)
-    .eq("host", host);
+// const wasReminderSent = async (
+//   chatId,
+//   contestId,
+//   reminderType,
+//   contestStart,
+//   host
+// ) => {
+//   const { data, error } = await supabase
+//     .from("sent_reminders")
+//     .select("id")
+//     .eq("chat_id", chatId)
+//     .eq("contest_id", contestId)
+//     .eq("reminder_type", reminderType)
+//     .eq("contest_start", contestStart)
+//     .eq("host", host);
 
-  if (error) {
-    console.error("❌ Error checking sent reminder:", error);
-    return false;
-  }
+//   if (error) {
+//     console.error("❌ Error checking sent reminder:", error);
+//     return false;
+//   }
 
-  return data.length > 0;
-};
+//   return data.length > 0;
+// };
 
 // Delete expired contests from database
 const deleteExpiredContests = async () => {
-  const now = new Date().toISOString();
+  const now = DateTime.utc().toISO({ suppressMilliseconds: true });
+  const oneHourLater = DateTime.utc()
+    .plus({ hours: 1 })
+    .toISO({ suppressMilliseconds: true });
 
-  const { error } = await supabase
+  // Delete '24hr' reminders where contest_start is within the next 1 hour
+  const { error: error24hr } = await supabase
     .from("sent_reminders")
     .delete()
-    .lt("contest_start", now);
+    .lt("contest_start", oneHourLater)
+    .eq("reminder_type", "24hr");
 
-  if (error) {
-    console.error("Error deleting expired contests:", error);
+  if (error24hr) {
+    console.error("Error deleting 24hr reminders:", error24hr);
   } else {
-    console.log("✅ Expired contests removed.");
+    console.log(
+      "✅ 24hr reminders removed where contest_start is within 1 hour."
+    );
+  }
+
+  // Delete '1hr' reminders where contest_start has already passed
+  const { error: error1hr } = await supabase
+    .from("sent_reminders")
+    .delete()
+    .lt("contest_start", now)
+    .eq("reminder_type", "1hr");
+
+  if (error1hr) {
+    console.error("Error deleting 1hr reminders:", error1hr);
+  } else {
+    console.log("✅ 1hr reminders removed where contest has already started.");
   }
 };
 
@@ -254,40 +279,50 @@ schedule.scheduleJob("*/10 * * * *", async () => {
     "🔄 Running scheduled job: Sending reminders & deleting expired contests"
   );
 
+  await deleteExpiredContests();
+
   const contests = await fetchContests();
+  if (contests.length === 0) {
+    console.log("No upcoming contests found.");
+    return;
+  }
   const subscribers = await getUserSubscriptions();
+
+  const { data: sentReminders, error } = await supabase
+    .from("sent_reminders")
+    .select("id");
+  if (error || !sentReminders) {
+    console.error("Error fetching sent reminders:", error);
+    return;
+  }
+  const sentRemindersSet = new Set(
+    sentReminders.map((reminder) => reminder.id)
+  );
+  const remindersToStore = [];
 
   for (const { chat_id, timezone } of subscribers) {
     for (const contest of contests) {
-      if (!allowedHosts.includes(contest.host)) continue;
-
       const contestId = contest.id;
-      const startTime = DateTime.fromISO(contest.start, {
+      const contestStart = DateTime.fromISO(contest.start, {
         zone: "utc",
       }).setZone(timezone);
-      const nowInUserTimezone = DateTime.now().setZone(timezone);
-      if (startTime <= nowInUserTimezone) continue;
-
-      const hoursLeft = startTime.diffNow("hours").hours;
+      const hoursLeft = contestStart.diff(DateTime.utc(), "hours").hours;
+      const hostName = getPlatformName(contest.host);
+      const reminder24hrId = `${chat_id}-${hostName}-${contestId}-24hr`;
+      const reminder1hrId = `${chat_id}-${hostName}-${contestId}-1hr`;
 
       if (
         hoursLeft <= 24 &&
         hoursLeft > 1 &&
-        !(await wasReminderSent(
-          chat_id,
-          contestId,
-          "24hr",
-          contest.start,
-          getPlatformName(contest.host)
-        ))
+        !sentRemindersSet.has(reminder24hrId)
       ) {
-        await storeSentReminder(
+        remindersToStore.push({
           chat_id,
-          contestId,
-          "24hr",
-          contest.start,
-          getPlatformName(contest.host)
-        );
+          contest_id: contestId,
+          reminder_type: "24hr",
+          contest_start: contest.start,
+          host: hostName,
+        });
         bot.sendMessage(
           chat_id,
           `⏳ *Reminder:* Contest within 24 hours\\!\n${formatContestMessage(
@@ -298,23 +333,14 @@ schedule.scheduleJob("*/10 * * * *", async () => {
         );
       }
 
-      if (
-        hoursLeft <= 1 &&
-        !(await wasReminderSent(
+      if (hoursLeft <= 1 && !sentRemindersSet.has(reminder1hrId)) {
+        remindersToStore.push({
           chat_id,
-          contestId,
-          "1hr",
-          contest.start,
-          getPlatformName(contest.host)
-        ))
-      ) {
-        await storeSentReminder(
-          chat_id,
-          contestId,
-          "1hr",
-          contest.start,
-          getPlatformName(contest.host)
-        );
+          contest_id: contestId,
+          reminder_type: "1hr",
+          contest_start: contest.start,
+          host: hostName,
+        });
         bot.sendMessage(
           chat_id,
           `🔥 *Reminder:* Contest starts within an hour\\!\n${formatContestMessage(
@@ -326,8 +352,7 @@ schedule.scheduleJob("*/10 * * * *", async () => {
       }
     }
   }
-
-  await deleteExpiredContests();
+  await storeSentReminders(remindersToStore);
 });
 
 // format contest message with timezone conversion
@@ -335,13 +360,13 @@ const formatContestMessage = (contest, timezone) => {
   const startTime = escapeMarkdownV2(
     DateTime.fromISO(contest.start, { zone: "utc" })
       .setZone(timezone)
-      .toFormat("yyyy-MM-dd HH:mm:ss ZZZZ")
+      .toFormat("d LLLL yyyy  h:mm a (z)")
   );
 
   const endTime = escapeMarkdownV2(
     DateTime.fromISO(contest.end, { zone: "utc" })
       .setZone(timezone)
-      .toFormat("yyyy-MM-dd HH:mm:ss ZZZZ")
+      .toFormat("d LLLL yyyy  h:mm a (z)")
   );
 
   const hours = Math.floor(contest.duration / 3600);

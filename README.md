@@ -113,7 +113,7 @@ node bot.js
 
 ## 🎯 Future Enhancements
 
-✅ More CP platforms (HackerRank, TopCoder, etc.)  
+✅ Customizable CP platforms for each user (HackerRank, TopCoder, Luogu etc.)  
 ✅ Customizable reminder times  
 ✅ User leaderboard & profile tracking
 
