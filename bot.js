@@ -35,13 +35,14 @@ if (process.env.SET_WEBHOOK === "true") {
 
 app.use(express.raw({ type: "application/json" }));
 
-app.post(`/bot${process.env.TELEGRAM_BOT_TOKEN}`, (req, res) => {
+app.post(`/bot${process.env.TELEGRAM_BOT_TOKEN}`, async (req, res) => {
   try {
-    bot.processUpdate(JSON.parse(req.body.toString()));
+    const update = JSON.parse(req.body.toString());
+    await bot.processUpdate(update);
     res.sendStatus(200);
   } catch (error) {
     console.error("Webhook error:", error);
-    res.sendStatus(400);
+    res.status(400).send("Invalid request");
   }
 });
 
@@ -49,7 +50,7 @@ app.get("/", (_, res) => res.send("Bot is running!"));
 
 app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
 
-const allowedHosts = new Set([
+const ALLOWED_HOSTS = [
   "atcoder.jp",
   "codeforces.com",
   "codechef.com",
@@ -61,7 +62,7 @@ const allowedHosts = new Set([
   // "topcoder.com",
   // "naukri.com/code360",
   // "luogu.com.cn",
-]);
+];
 
 const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 const getPlatformName = (host) => capitalize(host.split(".")[0]);
@@ -69,30 +70,29 @@ const escapeMarkdownV2 = (text) =>
   text.replace(/([_*[\]()~`>#+-=|{}.!])/g, "\\$1");
 
 // Fetch contest data from CList API
+let contestCache = null;
+let lastFetchTime = 0;
+const fetchInterval = 12 * 60 * 60 * 1000; // 12 hours
 const fetchContests = async () => {
+  const currentTime = DateTime.utc().toMillis();
+  if (contestCache && currentTime - lastFetchTime < fetchInterval) {
+    return contestCache;
+  }
   try {
-    const response = await axios.get(
-      `https://clist.by/api/v4/json/contest/?username=${process.env.CLIST_USERNAME}&api_key=${process.env.CLIST_API_KEY}&upcoming=true&duration__lt=86400&order_by=start`
-    );
-    const contests = response.data.objects.filter((contest) =>
-      allowedHosts.has(contest.host)
-    );
-    const nowInUTCTimezone = DateTime.now().setZone("Etc/UTC");
-    const filteredContests = contests.filter((contest) => {
-      const contestStart = DateTime.fromISO(contest.start, { zone: "utc" });
-      return contestStart > nowInUTCTimezone;
+    console.log("Fetching contests from CList API...");
+    const response = await axios.get(`https://clist.by/api/v4/json/contest/`, {
+      params: {
+        username: process.env.CLIST_USERNAME,
+        api_key: process.env.CLIST_API_KEY,
+        upcoming: "true",
+        order_by: "start",
+        limit: 100,
+        host__regex: ALLOWED_HOSTS.join("|"),
+      },
     });
-    return filteredContests.map((contest) => {
-      return {
-        id: contest.id,
-        event: contest.event,
-        host: contest.host,
-        start: contest.start,
-        end: contest.end,
-        duration: contest.duration,
-        href: contest.href,
-      };
-    });
+    contestCache = response.data.objects;
+    lastFetchTime = currentTime;
+    return contestCache;
   } catch (error) {
     console.error("Error fetching contests:", error);
     return [];
