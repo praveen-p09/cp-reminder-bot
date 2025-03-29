@@ -280,8 +280,6 @@ schedule.scheduleJob("*/10 * * * *", async () => {
     "🔄 Running scheduled job: Sending reminders & deleting expired contests"
   );
 
-  await deleteExpiredContests();
-
   const contests = await fetchContests();
   if (contests.length === 0) {
     console.log("No upcoming contests found.");
@@ -353,7 +351,12 @@ schedule.scheduleJob("*/10 * * * *", async () => {
       }
     }
   }
-  await storeSentReminders(remindersToStore);
+  if (remindersToStore.length === 0) {
+    console.log("No new reminders to store.");
+  } else {
+    await storeSentReminders(remindersToStore);
+  }
+  await deleteExpiredContests();
 });
 
 // format contest message with timezone conversion
