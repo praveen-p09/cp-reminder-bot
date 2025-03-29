@@ -86,6 +86,7 @@ const fetchContests = async () => {
         api_key: process.env.CLIST_API_KEY,
         upcoming: "true",
         order_by: "start",
+        duration__lt: 86400,
         limit: 100,
         host__regex: ALLOWED_HOSTS.join("|"),
       },
