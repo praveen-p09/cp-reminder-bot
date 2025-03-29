@@ -51,11 +51,11 @@ app.get("/", (_, res) => res.send("Bot is running!"));
 app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
 
 const ALLOWED_HOSTS = [
-  "atcoder.jp",
-  "codeforces.com",
-  "codechef.com",
-  "leetcode.com",
-  "geeksforgeeks.org",
+  "atcoder",
+  "codeforces",
+  "codechef",
+  "leetcode",
+  "geeksforgeeks",
   // "facebook.com/hackercup",
   // "hackerearth.com",
   // "hackerrank.com",
@@ -87,7 +87,6 @@ const fetchContests = async () => {
         upcoming: "true",
         order_by: "start",
         duration__lt: 86400,
-        limit: 100,
         host__regex: ALLOWED_HOSTS.join("|"),
       },
     });
@@ -281,10 +280,15 @@ schedule.scheduleJob("*/10 * * * *", async () => {
 
   for (const { chat_id, timezone } of subscribers) {
     for (const contest of contests) {
-      const contestId = contest.id;
       const contestStart = DateTime.fromISO(contest.start, {
         zone: "utc",
       }).setZone(timezone);
+      const now = DateTime.utc();
+      if (contestStart <= now) {
+        continue;
+      }
+
+      const contestId = contest.id;
       const hoursLeft = contestStart.diff(DateTime.utc(), "hours").hours;
       const hostName = getPlatformName(contest.host);
       const reminder24hrId = `${chat_id}-${hostName}-${contestId}-24hr`;
