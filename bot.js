@@ -51,18 +51,19 @@ app.get("/", (_, res) => res.send("Bot is running!"));
 app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
 
 const ALLOWED_HOSTS = [
-  "atcoder",
-  "codeforces",
-  "codechef",
-  "leetcode",
-  "geeksforgeeks",
-  // "facebook.com/hackercup",
-  // "hackerearth.com",
-  // "hackerrank.com",
-  // "topcoder.com",
-  // "naukri.com/code360",
-  // "luogu.com.cn",
+  "^atcoder\\.jp$",
+  "^codeforces\\.com$",
+  "^codechef\\.com$",
+  "^leetcode\\.com$",
+  "^geeksforgeeks\\.org$",
+  // "^facebook.com/hackercup$",
+  // "^hackerearth.com$",
+  // "^hackerrank.com$",
+  // "^topcoder.com$",
+  // "^naukri.com/code360$",
+  // "^luogu.com.cn$",
 ];
+const regexPattern = ALLOWED_HOSTS.join("|");
 
 const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
 const getPlatformName = (host) => capitalize(host.split(".")[0]);
@@ -87,7 +88,7 @@ const fetchContests = async () => {
         upcoming: "true",
         order_by: "start",
         duration__lt: 86400,
-        host__regex: ALLOWED_HOSTS.join("|"),
+        host__regex: regexPattern,
       },
     });
     contestCache = response.data.objects;
