@@ -87,7 +87,7 @@ const fetchContests = async () => {
         api_key: process.env.CLIST_API_KEY,
         upcoming: "true",
         order_by: "start",
-        duration__lt: 86400,
+        duration__lt: 21600,
         host__regex: regexPattern,
       },
     });
@@ -171,14 +171,17 @@ const storeSentReminders = async (reminders) => {
 // Delete expired contests from database
 const deleteExpiredContests = async () => {
   const now = new Date().toISOString();
+  const oneHourLater = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
   const { error } = await supabase
     .from("sent_reminders")
     .delete()
-    .lt("contest_start", now);
+    .or(
+      `contest_start.lt.${now},and(reminder_type.eq.24hr,contest_start.lt.${oneHourLater})`
+    );
 
   if (error) {
-    console.error("Error deleting expired contests:", error);
+    console.error("❌ Error deleting expired contests:", error);
   } else {
     console.log("✅ Expired contests removed.");
   }
@@ -336,12 +339,12 @@ schedule.scheduleJob("*/10 * * * *", async () => {
       }
     }
   }
+  await deleteExpiredContests();
   if (remindersToStore.length === 0) {
     console.log("No new reminders to store.");
   } else {
     await storeSentReminders(remindersToStore);
   }
-  await deleteExpiredContests();
 });
 
 // format contest message with timezone conversion

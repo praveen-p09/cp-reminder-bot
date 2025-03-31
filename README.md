@@ -45,7 +45,7 @@
 
 - **Backend:** Node.js
 - **Database:** Supabase (PostgreSQL)
-- **API:** [CList API](https://clist.by) for contest data
+- **API:** [CList](https://clist.by) for contest data
 - **Bot Framework:** node-telegram-bot-api
 - **Scheduler:** node-schedule
 - **Hosting:** Render
@@ -63,7 +63,7 @@
 - Uses **Supabase (PostgreSQL)** to store user subscriptions, timezones, and sent reminders.
 - Indexes optimize **query performance** when checking reminders.
 
-### **3️⃣ Rate-Limiting & Deduplication**
+### **3️⃣ Deduplication**
 
 - Stores sent reminders in the database to prevent **duplicate notifications**.
 
