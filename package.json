@@ -17,6 +17,7 @@
     "express": "^4.21.2",
     "luxon": "^3.5.0",
     "node-schedule": "^2.1.1",
-    "node-telegram-bot-api": "^0.66.0"
+    "node-telegram-bot-api": "^0.66.0",
+    "tzdata": "^1.0.44"
   }
 }

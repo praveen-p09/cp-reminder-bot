@@ -5,6 +5,7 @@ import axios from "axios";
 import express from "express";
 import { DateTime } from "luxon";
 import { createClient } from "@supabase/supabase-js";
+import tzData from "tzdata/timezone-data.json" assert { type: "json" };
 
 dotenv.config();
 
@@ -50,6 +51,12 @@ app.get("/", (_, res) => res.send("Bot is running!"));
 
 app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
 
+const VALID_TIMEZONES = new Set(Object.keys(tzData.zones));
+
+// Function to check if a timezone is valid
+const isValidTimezone = (timezone) => VALID_TIMEZONES.has(timezone);
+console.log("Valid Timezones:", VALID_TIMEZONES);
+
 const ALLOWED_HOSTS = [
   "^atcoder\\.jp$",
   "^codeforces\\.com$",
@@ -91,12 +98,24 @@ const fetchContests = async () => {
         host__regex: regexPattern,
       },
     });
-    contestCache = response.data.objects;
+    contestCache = response.data.objects || [];
     lastFetchTime = currentTime;
     return contestCache;
   } catch (error) {
     console.error("Error fetching contests:", error);
     return [];
+  }
+};
+
+const sendMessageSafe = async (chatId, text, options = {}) => {
+  try {
+    await bot.sendMessage(chatId, text, options);
+  } catch (error) {
+    console.error(`❌ Error sending message to ${chatId}:`, error.message);
+    if (error.response?.status === 403) {
+      console.log(`🚫 User ${chatId} blocked the bot. Removing from database.`);
+      await removeSubscription(chatId);
+    }
   }
 };
 
@@ -114,16 +133,29 @@ const getUserSubscriptions = async () => {
 
 // Store or update user timezone in database
 const setUserTimezone = async (chatId, timezone) => {
-  await supabase
+  const { error } = await supabase
     .from("subscriptions")
     .upsert({ chat_id: chatId, timezone }, { onConflict: "chat_id" });
+
+  if (error) {
+    console.error("❌ Error setting timezone:", error.message);
+    throw new Error("Failed to update timezone. Please try again later.");
+  }
 };
 
 // Store subscription in database
 const addSubscription = async (chatId) => {
-  await supabase
+  const { error } = await supabase
     .from("subscriptions")
-    .upsert({ chat_id: chatId }, { onConflict: ["chat_id"] });
+    .upsert(
+      { chat_id: chatId, timezone: "Asia/Kolkata" },
+      { onConflict: "chat_id" }
+    );
+
+  if (error) {
+    console.error("❌ Error adding subscription:", error.message);
+    throw new Error("Failed to subscribe. Please try again later.");
+  }
 };
 
 // Remove subscription from database
@@ -188,11 +220,11 @@ const deleteExpiredContests = async () => {
 };
 
 // Command: Start
-bot.onText(/\/start/, (msg) => {
+bot.onText(/\/start/, async (msg) => {
   const username = msg.from.username || msg.from.first_name || "User";
   const usernameEscaped = escapeMarkdownV2(username);
 
-  bot.sendMessage(
+  await sendMessageSafe(
     msg.chat.id,
     `👋 Hello, ${usernameEscaped}\\!\n\n` +
       `I'm *CP Reminder Bot*, your personal assistant for staying updated with upcoming coding contests\\! 🚀\n\n` +
@@ -202,20 +234,25 @@ bot.onText(/\/start/, (msg) => {
       `3️⃣ Allow timezone customization to match your local time\\.\n\n` +
       `  *How to Use\\?*\n` +
       `  ✅ Use \`/subscribe\` to start receiving contest reminders\\.\n` +
-      `  🌍 Use \`/settimezone TZ\\_Identifier\` to configure your timezone\\.\n` +
+      `  🌍 Use \`/settimezone TZ\\_Identifier\` to configure your timezone, set to IST by default\\.\n` +
       `  ❌ Use \`/unsubscribe\` to stop receiving reminders\\.\n\n` +
       `🛠️ Created by [Praveen Patro](https://www.linkedin.com/in/praveen-chandra-patro-1a6a5a257)\n\n` +
       `Happy Coding\\! 🚀`,
     {
       parse_mode: "MarkdownV2",
     }
-  );
+  ).catch((error) => {
+    console.error("Error sending message:", error.message);
+    if (error.response?.status === 403) {
+      removeSubscription(msg.chat.id);
+    }
+  });
 });
 
 // Command: Subscribe
 bot.onText(/\/subscribe/, async (msg) => {
   await addSubscription(msg.chat.id);
-  bot.sendMessage(
+  await sendMessageSafe(
     msg.chat.id,
     "✅ Subscribed! You'll receive contest reminders."
   );
@@ -224,24 +261,35 @@ bot.onText(/\/subscribe/, async (msg) => {
 // Command: Unsubscribe
 bot.onText(/\/unsubscribe/, async (msg) => {
   await removeSubscription(msg.chat.id);
-  bot.sendMessage(msg.chat.id, "❌ Unsubscribed! You won't receive reminders.");
+  await sendMessageSafe(
+    msg.chat.id,
+    "❌ Unsubscribed! You won't receive reminders."
+  );
 });
 
 // Command: Set Timezone
 bot.onText(/\/settimezone (.+)/, async (msg, match) => {
   const timezone = match[1].trim();
+
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+    if (!isValidTimezone(timezone)) {
+      throw new Error("Invalid timezone");
+    }
+
     await setUserTimezone(msg.chat.id, timezone);
-    bot.sendMessage(
+
+    await sendMessageSafe(
       msg.chat.id,
       `🌍 Timezone set to *${escapeMarkdownV2(timezone)}*`,
       { parse_mode: "MarkdownV2" }
     );
-  } catch {
-    bot.sendMessage(
+  } catch (error) {
+    console.error("Error setting timezone:", error.message);
+
+    await sendMessageSafe(
       msg.chat.id,
-      "⚠️ Invalid timezone. Use a valid identifier."
+      "⚠️ Invalid timezone. Use a valid identifier.\n[Time Zone List](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)",
+      { parse_mode: "MarkdownV2", disable_web_page_preview: true }
     );
   }
 });
@@ -253,97 +301,111 @@ bot.setMyCommands([
   { command: "unsubscribe", description: "Unsubscribe from contest reminders" },
   {
     command: "settimezone",
-    description: "Set your timezone using TZ identifier(eg: Asia/Kolkata)",
+    description: "Set your timezone using TZ identifier (eg: Asia/Kolkata)",
   },
 ]);
 
 // Schedule Job every 10 minutes : send reminders and delete expired contests
 schedule.scheduleJob("*/10 * * * *", async () => {
-  console.log(
-    "🔄 Running scheduled job: Sending reminders & deleting expired contests"
-  );
+  try {
+    console.log(
+      "🔄 Running scheduled job: Sending reminders & deleting expired contests"
+    );
 
-  const contests = await fetchContests();
-  if (contests.length === 0) {
-    console.log("No upcoming contests found.");
-    return;
-  }
-  const subscribers = await getUserSubscriptions();
+    const contests = await fetchContests();
+    if (contests.length === 0) {
+      console.log("No upcoming contests found.");
+      return;
+    }
+    const subscribers = await getUserSubscriptions();
 
-  const { data: sentReminders, error } = await supabase
-    .from("sent_reminders")
-    .select("id");
-  if (error || !sentReminders) {
-    console.error("Error fetching sent reminders:", error);
-    return;
-  }
-  const sentRemindersSet = new Set(
-    sentReminders.map((reminder) => reminder.id)
-  );
-  const remindersToStore = [];
+    const { data: sentReminders, error } = await supabase
+      .from("sent_reminders")
+      .select("id");
+    if (error || !sentReminders) {
+      console.error("Error fetching sent reminders:", error);
+      return;
+    }
+    const sentRemindersSet = new Set(
+      sentReminders.map((reminder) => reminder.id)
+    );
+    const remindersToStore = [];
 
-  for (const { chat_id, timezone } of subscribers) {
-    for (const contest of contests) {
-      const contestStart = DateTime.fromISO(contest.start, {
-        zone: "utc",
-      }).setZone(timezone);
-      const now = DateTime.utc();
-      if (contestStart <= now) {
-        continue;
-      }
+    for (const { chat_id, timezone } of subscribers) {
+      for (const contest of contests) {
+        const contestStart = DateTime.fromISO(contest.start, {
+          zone: "utc",
+        }).setZone(timezone);
+        const now = DateTime.utc();
+        if (contestStart <= now) {
+          continue;
+        }
 
-      const contestId = contest.id;
-      const hoursLeft = contestStart.diff(DateTime.utc(), "hours").hours;
-      const hostName = getPlatformName(contest.host);
-      const reminder24hrId = `${chat_id}-${hostName}-${contestId}-24hr`;
-      const reminder1hrId = `${chat_id}-${hostName}-${contestId}-1hr`;
+        const contestId = contest.id;
+        const hoursLeft = contestStart.diff(DateTime.utc(), "hours").hours;
+        const hostName = getPlatformName(contest.host);
+        const reminder24hrId = `${chat_id}-${hostName}-${contestId}-24hr`;
+        const reminder1hrId = `${chat_id}-${hostName}-${contestId}-1hr`;
 
-      if (
-        hoursLeft <= 24 &&
-        hoursLeft > 1 &&
-        !sentRemindersSet.has(reminder24hrId)
-      ) {
-        remindersToStore.push({
-          chat_id,
-          contest_id: contestId,
-          reminder_type: "24hr",
-          contest_start: contest.start,
-          host: hostName,
-        });
-        bot.sendMessage(
-          chat_id,
-          `⏳ *Reminder:* Contest within 24 hours\\!\n${formatContestMessage(
-            contest,
-            timezone
-          )}`,
-          { parse_mode: "MarkdownV2" }
-        );
-      }
+        if (
+          hoursLeft <= 24 &&
+          hoursLeft > 1 &&
+          !sentRemindersSet.has(reminder24hrId)
+        ) {
+          remindersToStore.push({
+            chat_id,
+            contest_id: contestId,
+            reminder_type: "24hr",
+            contest_start: contest.start,
+            host: hostName,
+          });
+          sendMessageSafe(
+            chat_id,
+            `⏳ *Reminder:* Contest within 24 hours\\!\n${formatContestMessage(
+              contest,
+              timezone
+            )}`,
+            { parse_mode: "MarkdownV2" }
+          ).catch((error) => {
+            console.error("Error sending message:", error.message);
+            if (error.response?.status === 403) {
+              removeSubscription(msg.chat.id);
+            }
+          });
+        }
 
-      if (hoursLeft <= 1 && !sentRemindersSet.has(reminder1hrId)) {
-        remindersToStore.push({
-          chat_id,
-          contest_id: contestId,
-          reminder_type: "1hr",
-          contest_start: contest.start,
-          host: hostName,
-        });
-        bot.sendMessage(
-          chat_id,
-          `🔥 *Reminder:* Contest starts within an hour\\!\n${formatContestMessage(
-            contest,
-            timezone
-          )}`,
-          { parse_mode: "MarkdownV2" }
-        );
+        if (hoursLeft <= 1 && !sentRemindersSet.has(reminder1hrId)) {
+          remindersToStore.push({
+            chat_id,
+            contest_id: contestId,
+            reminder_type: "1hr",
+            contest_start: contest.start,
+            host: hostName,
+          });
+          sendMessageSafe(
+            chat_id,
+            `🔥 *Reminder:* Contest starts within an hour\\!\n${formatContestMessage(
+              contest,
+              timezone
+            )}`,
+            { parse_mode: "MarkdownV2" }
+          ).catch((error) => {
+            console.error("Error sending message:", error.message);
+            if (error.response?.status === 403) {
+              removeSubscription(msg.chat.id);
+            }
+          });
+        }
       }
     }
-  }
-  await deleteExpiredContests();
-  if (remindersToStore.length === 0) {
-    console.log("No new reminders to store.");
-  } else {
-    await storeSentReminders(remindersToStore);
+    await deleteExpiredContests();
+    if (remindersToStore.length === 0) {
+      console.log("No new reminders to store.");
+    } else {
+      await storeSentReminders(remindersToStore);
+    }
+  } catch (error) {
+    console.error("❌ Error in scheduled job:", error.message);
   }
 });
 
