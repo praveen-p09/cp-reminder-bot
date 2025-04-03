@@ -5,7 +5,20 @@ import axios from "axios";
 import express from "express";
 import { DateTime } from "luxon";
 import { createClient } from "@supabase/supabase-js";
-import tzData from "tzdata/timezone-data.json" assert { type: "json" };
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Resolve the file path
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const tzDataPath = path.join(
+  __dirname,
+  "node_modules/tzdata/timezone-data.json"
+);
+
+// Read and parse JSON synchronously
+const tzData = JSON.parse(fs.readFileSync(tzDataPath, "utf-8"));
+const VALID_TIMEZONES = new Set(Object.keys(tzData.zones));
 
 dotenv.config();
 
@@ -50,8 +63,6 @@ app.post(`/bot${process.env.TELEGRAM_BOT_TOKEN}`, async (req, res) => {
 app.get("/", (_, res) => res.send("Bot is running!"));
 
 app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
-
-const VALID_TIMEZONES = new Set(Object.keys(tzData.zones));
 
 // Function to check if a timezone is valid
 const isValidTimezone = (timezone) => VALID_TIMEZONES.has(timezone);
