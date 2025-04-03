@@ -66,7 +66,7 @@ app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
 
 // Function to check if a timezone is valid
 const isValidTimezone = (timezone) => VALID_TIMEZONES.has(timezone);
-console.log("Valid Timezones:", VALID_TIMEZONES);
+// console.log("Valid Timezones:", VALID_TIMEZONES);
 
 const ALLOWED_HOSTS = [
   "^atcoder\\.jp$",
@@ -299,7 +299,7 @@ bot.onText(/\/settimezone (.+)/, async (msg, match) => {
 
     await sendMessageSafe(
       msg.chat.id,
-      "⚠️ Invalid timezone. Use a valid identifier.\n[Time Zone List](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)",
+      "⚠️ Invalid timezone\nUse a valid identifier [Time Zone List](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)",
       { parse_mode: "MarkdownV2", disable_web_page_preview: true }
     );
   }
