@@ -39,7 +39,7 @@ const setWebhook = async () => {
     );
     console.log("✅ Webhook set:", response.data);
   } catch (error) {
-    console.error("❌ Error setting webhook:", error?.response?.data ?? error);
+    console.error("❌ Error setting webhook:", error);
   }
 };
 
@@ -122,8 +122,8 @@ const sendMessageSafe = async (chatId, text, options = {}) => {
   try {
     await bot.sendMessage(chatId, text, options);
   } catch (error) {
-    console.error(`❌ Error sending message to ${chatId}:`, error.message);
-    if (error.response?.status === 403) {
+    console.error(`❌ Error sending message to ${chatId}:`, error);
+    if (error.response?.statusCode === 403) {
       console.log(`🚫 User ${chatId} blocked the bot. Removing from database.`);
       await removeSubscription(chatId);
     }
@@ -149,7 +149,7 @@ const setUserTimezone = async (chatId, timezone) => {
     .upsert({ chat_id: chatId, timezone }, { onConflict: "chat_id" });
 
   if (error) {
-    console.error("❌ Error setting timezone:", error.message);
+    console.error("❌ Error setting timezone:", error);
     throw new Error("Failed to update timezone. Please try again later.");
   }
 };
@@ -164,14 +164,21 @@ const addSubscription = async (chatId) => {
     );
 
   if (error) {
-    console.error("❌ Error adding subscription:", error.message);
+    console.error("❌ Error adding subscription:", error);
     throw new Error("Failed to subscribe. Please try again later.");
   }
 };
 
 // Remove subscription from database
 const removeSubscription = async (chatId) => {
-  await supabase.from("subscriptions").delete().match({ chat_id: chatId });
+  const { error } = await supabase
+    .from("subscriptions")
+    .delete()
+    .match({ chat_id: chatId });
+  if (error) {
+    console.error("❌ Error removing blocked user:", error);
+    throw new Error("Failed to unsubscribe. Please try again later.");
+  }
 };
 
 // Store sent reminders to prevent duplicate alerts for same contest
@@ -245,7 +252,7 @@ bot.onText(/\/start/, async (msg) => {
       `3️⃣ Allow timezone customization to match your local time\\.\n\n` +
       `  *How to Use\\?*\n` +
       `  ✅ Use \`/subscribe\` to start receiving contest reminders\\.\n` +
-      `  🌍 Use \`/settimezone TZ\\_Identifier\` to configure your timezone, set to IST by default\\.\n` +
+      `  🌍 Use \`/settimezone TZ\\_Identifier\` to configure your timezone, e\\.g\\. \`/settimezone Asia/Kolkata\`\nSet to IST by default\\.\n` +
       `  ❌ Use \`/unsubscribe\` to stop receiving reminders\\.\n\n` +
       `🛠️ Created by [Praveen Patro](https://www.linkedin.com/in/praveen-chandra-patro-1a6a5a257)\n\n` +
       `Happy Coding\\! 🚀`,
@@ -253,7 +260,7 @@ bot.onText(/\/start/, async (msg) => {
       parse_mode: "MarkdownV2",
     }
   ).catch((error) => {
-    console.error("Error sending message:", error.message);
+    console.error("Error sending message:", error);
     if (error.response?.status === 403) {
       removeSubscription(msg.chat.id);
     }
@@ -295,11 +302,11 @@ bot.onText(/\/settimezone (.+)/, async (msg, match) => {
       { parse_mode: "MarkdownV2" }
     );
   } catch (error) {
-    console.error("Error setting timezone:", error.message);
+    console.error("Error setting timezone:", error);
 
     await sendMessageSafe(
       msg.chat.id,
-      "⚠️ Invalid timezone\nUse a valid identifier [Time Zone List](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)",
+      "⚠️ Invalid timezone\nUse a valid identifier from [Time Zone List](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)",
       { parse_mode: "MarkdownV2", disable_web_page_preview: true }
     );
   }
@@ -312,7 +319,8 @@ bot.setMyCommands([
   { command: "unsubscribe", description: "Unsubscribe from contest reminders" },
   {
     command: "settimezone",
-    description: "Set your timezone using TZ identifier (eg: Asia/Kolkata)",
+    description:
+      "Set your timezone using a valid TZ identifier (eg: Asia/Kolkata)",
   },
 ]);
 
@@ -377,12 +385,7 @@ schedule.scheduleJob("*/10 * * * *", async () => {
               timezone
             )}`,
             { parse_mode: "MarkdownV2" }
-          ).catch((error) => {
-            console.error("Error sending message:", error.message);
-            if (error.response?.status === 403) {
-              removeSubscription(msg.chat.id);
-            }
-          });
+          );
         }
 
         if (hoursLeft <= 1 && !sentRemindersSet.has(reminder1hrId)) {
@@ -400,14 +403,10 @@ schedule.scheduleJob("*/10 * * * *", async () => {
               timezone
             )}`,
             { parse_mode: "MarkdownV2" }
-          ).catch((error) => {
-            console.error("Error sending message:", error.message);
-            if (error.response?.status === 403) {
-              removeSubscription(msg.chat.id);
-            }
-          });
+          );
         }
       }
+      setTimeout(() => {}, 34); // To avoid rate limiting
     }
     await deleteExpiredContests();
     if (remindersToStore.length === 0) {
@@ -416,7 +415,7 @@ schedule.scheduleJob("*/10 * * * *", async () => {
       await storeSentReminders(remindersToStore);
     }
   } catch (error) {
-    console.error("❌ Error in scheduled job:", error.message);
+    console.error("❌ Error in scheduled job:", error);
   }
 });
 
