@@ -24,7 +24,15 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { webHook: true });
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
+  webHook: true,
+  request: {
+    agentOptions: {
+      keepAlive: true,
+      family: 4,
+    },
+  },
+});
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
