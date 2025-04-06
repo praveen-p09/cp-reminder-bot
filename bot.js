@@ -121,8 +121,10 @@ const fetchContests = async () => {
 const sendMessageSafe = async (chatId, text, options = {}) => {
   try {
     await bot.sendMessage(chatId, text, options);
+    setTimeout(() => {}, 34); // To avoid rate limiting
   } catch (error) {
     console.error(`❌ Error sending message to ${chatId}:`, error);
+    console.error("Error body:", error?.response?.body);
     if (error.response?.statusCode === 403) {
       console.log(`🚫 User ${chatId} blocked the bot. Removing from database.`);
       await removeSubscription(chatId);
@@ -371,42 +373,49 @@ schedule.scheduleJob("*/10 * * * *", async () => {
           hoursLeft > 1 &&
           !sentRemindersSet.has(reminder24hrId)
         ) {
-          remindersToStore.push({
-            chat_id,
-            contest_id: contestId,
-            reminder_type: "24hr",
-            contest_start: contest.start,
-            host: hostName,
-          });
-          sendMessageSafe(
-            chat_id,
-            `⏳ *Reminder:* Contest within 24 hours\\!\n${formatContestMessage(
-              contest,
-              timezone
-            )}`,
-            { parse_mode: "MarkdownV2" }
-          );
+          try {
+            sendMessageSafe(
+              chat_id,
+              `⏳ *Reminder:* Contest within 24 hours\\!\n${formatContestMessage(
+                contest,
+                timezone
+              )}`,
+              { parse_mode: "MarkdownV2" }
+            );
+            remindersToStore.push({
+              chat_id,
+              contest_id: contestId,
+              reminder_type: "24hr",
+              contest_start: contest.start,
+              host: hostName,
+            });
+          } catch (error) {
+            console.error("Error sending 24hr reminder:", error);
+          }
         }
 
         if (hoursLeft <= 1 && !sentRemindersSet.has(reminder1hrId)) {
-          remindersToStore.push({
-            chat_id,
-            contest_id: contestId,
-            reminder_type: "1hr",
-            contest_start: contest.start,
-            host: hostName,
-          });
-          sendMessageSafe(
-            chat_id,
-            `🔥 *Reminder:* Contest starts within an hour\\!\n${formatContestMessage(
-              contest,
-              timezone
-            )}`,
-            { parse_mode: "MarkdownV2" }
-          );
+          try {
+            sendMessageSafe(
+              chat_id,
+              `🔥 *Reminder:* Contest starts within an hour\\!\n${formatContestMessage(
+                contest,
+                timezone
+              )}`,
+              { parse_mode: "MarkdownV2" }
+            );
+            remindersToStore.push({
+              chat_id,
+              contest_id: contestId,
+              reminder_type: "1hr",
+              contest_start: contest.start,
+              host: hostName,
+            });
+          } catch (error) {
+            console.error("Error sending 1hr reminder:", error);
+          }
         }
       }
-      setTimeout(() => {}, 34); // To avoid rate limiting
     }
     await deleteExpiredContests();
     if (remindersToStore.length === 0) {
